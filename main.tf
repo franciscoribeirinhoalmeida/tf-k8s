@@ -17,27 +17,26 @@ resource "kubernetes_config_map_v1" "nginx_config" {
 
   data = {
     "nginx.conf" = <<EOF
-events {}
+    events {}
 
 
-http {
-    server {
-        listen 80;
+    http {
+        server {
+            listen 80;
 
-        location / {
-            return 200 "Hello from nginx";
-        }
+            location / {
+                return 200 "Hello from nginx";
+            }
 
-        location /redis/ {
-            proxy_pass http://redis-commander-service:80/;
+            location /redis/ {
+                proxy_pass http://redis-commander-service:80/;
+            }
         }
     }
-}
 
-EOF
+    EOF
   }
 }
-
 
 resource "kubernetes_deployment_v1" "nginx" {
   metadata {
@@ -113,6 +112,17 @@ resource "kubernetes_service_v1" "nginx" {
   }
 }
 
+resource "kubernetes_secret_v1" "redis" {
+  metadata {
+    name = "redis-secret"
+  }
+
+  data = {
+    password = var.redis_password
+  }
+
+  type = "Opaque"
+}
 
 resource "kubernetes_deployment_v1" "redis" {
   metadata {
@@ -151,11 +161,31 @@ resource "kubernetes_deployment_v1" "redis" {
             name       = "redis-storage"
             mount_path = "/data"
           }
+
+          env {
+            name = "REDIS_PASSWORD"
+
+            value_from {
+              secret_key_ref {
+                name = kubernetes_secret_v1.redis.metadata[0].name
+                key  = "password"
+              }
+            }
+          }
+
+          command = [
+            "/bin/sh",
+            "-c"
+          ]
+
+          args = [
+            "redis-server --requirepass \"$REDIS_PASSWORD\""
+          ]
         }
 
         volume {
           name = "redis-storage"
-        
+
           persistent_volume_claim {
             claim_name = kubernetes_persistent_volume_claim_v1.redis_data.metadata[0].name
           }
@@ -228,7 +258,6 @@ resource "kubernetes_deployment_v1" "redis_commander" {
   }
 }
 
-
 resource "kubernetes_service_v1" "redis_commander" {
   metadata {
     name = "redis-commander-service"
@@ -247,7 +276,6 @@ resource "kubernetes_service_v1" "redis_commander" {
     type = "NodePort"
   }
 }
-
 
 resource "kubernetes_persistent_volume_claim_v1" "redis_data" {
   metadata {
