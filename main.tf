@@ -55,6 +55,10 @@ resource "kubernetes_config_map_v1" "nginx_config" {
             location /netdata/ {
                 proxy_pass http://netdata-service.monitoring.svc.cluster.local:19999/;
             }
+
+            location /counter/ {
+                proxy_pass http://counter-app-service:5000/;
+            }
         }
     }
 
