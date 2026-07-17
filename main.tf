@@ -123,6 +123,17 @@ resource "kubernetes_deployment_v1" "nginx" {
             sub_path   = ".htpasswd"
           }
 
+          resources {
+            requests = {
+              cpu    = "100m"
+              memory = "128Mi"
+            }
+
+            limits = {
+              cpu    = "500m"
+              memory = "256Mi"
+            }
+          }
         }
         
         volume {
@@ -239,6 +250,18 @@ resource "kubernetes_deployment_v1" "redis" {
           args = [
             "redis-server --requirepass \"$REDIS_PASSWORD\""
           ]
+
+          resources {
+            requests = {
+              cpu    = "100m"
+              memory = "128Mi"
+            }
+
+            limits = {
+              cpu    = "500m"
+              memory = "512Mi"
+            }
+          }
         }
 
         volume {
@@ -404,6 +427,38 @@ resource "kubernetes_deployment_v1" "counter_app" {
                 key  = "password"
               }
             }
+          }
+
+          resources {
+            requests = {
+              cpu    = "100m"
+              memory = "128Mi"
+            }
+
+            limits = {
+              cpu    = "500m"
+              memory = "256Mi"
+            }
+          }
+
+          liveness_probe {
+            http_get {
+              path = "/health"
+              port = 5000
+            }
+
+            initial_delay_seconds = 10
+            period_seconds        = 10
+          }
+
+          readiness_probe {
+            http_get {
+              path = "/health"
+              port = 5000
+            }
+
+            initial_delay_seconds = 5
+            period_seconds        = 5
           }
         }
       }
