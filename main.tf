@@ -16,6 +16,15 @@ resource "kubernetes_namespace_v1" "apps" {
   }
 }
 
+resource "kubernetes_namespace_v1" "monitoring" {
+  metadata {
+    name = "monitoring"
+  }
+}
+
+
+//---------------------- Nginx Resources ------------------------------
+
 resource "kubernetes_secret_v1" "nginx_auth" {
   metadata {
     name = "nginx-auth"
@@ -156,6 +165,8 @@ resource "kubernetes_service_v1" "nginx" {
   }
 }
 
+
+//---------------------- Redis Resources ------------------------------
 
 resource "kubernetes_secret_v1" "redis" {
   metadata {
@@ -343,6 +354,9 @@ resource "kubernetes_persistent_volume_claim_v1" "redis_data" {
   }
 }
 
+
+//---------------------- Counter App Resources ------------------------------
+
 resource "kubernetes_deployment_v1" "counter_app" {
   metadata {
     name      = "counter-app"
@@ -417,11 +431,8 @@ resource "kubernetes_service_v1" "counter_app" {
   }
 }
 
-resource "kubernetes_namespace_v1" "monitoring" {
-  metadata {
-    name = "monitoring"
-  }
-}
+
+//---------------------- Netdata Resources ------------------------------
 
 resource "kubernetes_deployment_v1" "netdata" {
   metadata {
