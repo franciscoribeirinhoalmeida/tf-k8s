@@ -10,9 +10,27 @@ provider "kubernetes" {
   config_path = "~/.kube/config"
 }
 
+resource "kubernetes_namespace_v1" "apps" {
+  metadata {
+    name = "apps"
+  }
+}
+
+resource "kubernetes_secret_v1" "nginx_auth" {
+  metadata {
+    name = "nginx-auth"
+    namespace = kubernetes_namespace_v1.apps.metadata[0].name
+  }
+
+  data = {
+    ".htpasswd" = file("${path.module}/.htpasswd")
+  }
+}
+
 resource "kubernetes_config_map_v1" "nginx_config" {
   metadata {
     name = "nginx-config"
+    namespace = kubernetes_namespace_v1.apps.metadata[0].name
   }
 
   data = {
@@ -29,7 +47,13 @@ resource "kubernetes_config_map_v1" "nginx_config" {
             }
 
             location /redis/ {
+                auth_basic "Restricted Access";
+                auth_basic_user_file /etc/nginx/.htpasswd;
                 proxy_pass http://redis-commander-service:80/;
+            }
+
+            location /netdata/ {
+                proxy_pass http://netdata-service.monitoring.svc.cluster.local:19999/;
             }
         }
     }
@@ -41,6 +65,8 @@ resource "kubernetes_config_map_v1" "nginx_config" {
 resource "kubernetes_deployment_v1" "nginx" {
   metadata {
     name = "nginx"
+    namespace = kubernetes_namespace_v1.apps.metadata[0].name
+
     labels = {
       app = "nginx"
     }
@@ -78,6 +104,12 @@ resource "kubernetes_deployment_v1" "nginx" {
             sub_path   = "nginx.conf"
           }
 
+          volume_mount {
+            name       = "nginx-auth"
+            mount_path = "/etc/nginx/.htpasswd"
+            sub_path   = ".htpasswd"
+          }
+
         }
         
         volume {
@@ -87,15 +119,23 @@ resource "kubernetes_deployment_v1" "nginx" {
             name = kubernetes_config_map_v1.nginx_config.metadata[0].name
           }
         }
+
+        volume {
+          name = "nginx-auth"
+
+          secret {
+            secret_name = kubernetes_secret_v1.nginx_auth.metadata[0].name
+          }
+        }
       }
     }
   }
 }
 
-
 resource "kubernetes_service_v1" "nginx" {
   metadata {
     name = "nginx-service"
+    namespace = kubernetes_namespace_v1.apps.metadata[0].name
   }
 
   spec {
@@ -112,9 +152,11 @@ resource "kubernetes_service_v1" "nginx" {
   }
 }
 
+
 resource "kubernetes_secret_v1" "redis" {
   metadata {
     name = "redis-secret"
+    namespace = kubernetes_namespace_v1.apps.metadata[0].name
   }
 
   data = {
@@ -127,6 +169,7 @@ resource "kubernetes_secret_v1" "redis" {
 resource "kubernetes_deployment_v1" "redis" {
   metadata {
     name = "redis"
+    namespace = kubernetes_namespace_v1.apps.metadata[0].name
 
     labels = {
       app = "redis"
@@ -198,6 +241,7 @@ resource "kubernetes_deployment_v1" "redis" {
 resource "kubernetes_service_v1" "redis" {
   metadata {
     name = "redis-service"
+    namespace = kubernetes_namespace_v1.apps.metadata[0].name
   }
 
   spec {
@@ -217,7 +261,7 @@ resource "kubernetes_service_v1" "redis" {
 resource "kubernetes_deployment_v1" "redis_commander" {
   metadata {
     name = "redis-commander"
-
+    namespace = kubernetes_namespace_v1.apps.metadata[0].name
     labels = {
       app = "redis-commander"
     }
@@ -246,7 +290,7 @@ resource "kubernetes_deployment_v1" "redis_commander" {
 
           env {
             name  = "REDIS_HOSTS"
-            value = "local:redis-service:6379"
+            value = "local:redis-service:6379:0:${var.redis_password}"
           }
 
           port {
@@ -261,6 +305,7 @@ resource "kubernetes_deployment_v1" "redis_commander" {
 resource "kubernetes_service_v1" "redis_commander" {
   metadata {
     name = "redis-commander-service"
+    namespace = kubernetes_namespace_v1.apps.metadata[0].name
   }
 
   spec {
@@ -280,6 +325,7 @@ resource "kubernetes_service_v1" "redis_commander" {
 resource "kubernetes_persistent_volume_claim_v1" "redis_data" {
   metadata {
     name = "redis-data"
+    namespace = kubernetes_namespace_v1.apps.metadata[0].name
   }
 
   spec {
@@ -292,3 +338,144 @@ resource "kubernetes_persistent_volume_claim_v1" "redis_data" {
     }
   }
 }
+
+resource "kubernetes_deployment_v1" "counter_app" {
+  metadata {
+    name      = "counter-app"
+    namespace = kubernetes_namespace_v1.apps.metadata[0].name
+  }
+
+  spec {
+    replicas = 1
+
+    selector {
+      match_labels = {
+        app = "counter-app"
+      }
+    }
+
+    template {
+      metadata {
+        labels = {
+          app = "counter-app"
+        }
+      }
+
+      spec {
+        container {
+          name  = "counter-app"
+          image = "flask-counter:v1"
+
+          image_pull_policy = "Never"
+
+          port {
+            container_port = 5000
+          }
+
+          env {
+            name  = "REDIS_HOST"
+            value = kubernetes_service_v1.redis.metadata[0].name
+          }
+
+          env {
+            name = "REDIS_PASSWORD"
+
+            value_from {
+              secret_key_ref {
+                name = kubernetes_secret_v1.redis.metadata[0].name
+                key  = "password"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+resource "kubernetes_service_v1" "counter_app" {
+  metadata {
+    name      = "counter-app-service"
+    namespace = kubernetes_namespace_v1.apps.metadata[0].name
+  }
+
+  spec {
+    selector = {
+      app = "counter-app"
+    }
+
+    port {
+      port        = 5000
+      target_port = 5000
+    }
+
+    type = "NodePort"
+  }
+}
+
+resource "kubernetes_namespace_v1" "monitoring" {
+  metadata {
+    name = "monitoring"
+  }
+}
+
+resource "kubernetes_deployment_v1" "netdata" {
+  metadata {
+    name = "netdata"
+    namespace = "monitoring"
+    labels = {
+      app = "netdata"
+    }
+  }
+
+  spec {
+    replicas = 1
+
+    selector {
+      match_labels = {
+        app = "netdata"
+      }
+    }
+
+    template {
+      metadata {
+        labels = {
+          app = "netdata"
+        }
+      }
+
+      spec {
+        container {
+          name  = "netdata"
+          image = "netdata/netdata:latest"
+
+          port {
+            container_port = 19999
+          }
+        }
+      }
+    }
+  }
+  
+}
+
+resource "kubernetes_service_v1" "netdata" {
+  metadata {
+    name      = "netdata-service"
+    namespace = "monitoring"
+  }
+
+  spec {
+    selector = {
+      app = "netdata"
+    }
+
+    port {
+      port        = 19999
+      target_port = 19999
+    }
+
+    type = "ClusterIP"
+  }
+}
+
