@@ -377,6 +377,37 @@ resource "kubernetes_persistent_volume_claim_v1" "redis_data" {
   }
 }
 
+resource "kubernetes_ingress_v1" "redis" {
+  metadata {
+    name      = "redis-ingress"
+    namespace = "apps"
+  }
+
+  spec {
+    ingress_class_name = "nginx"
+
+    rule {
+      host = "redis.local"
+
+      http {
+        path {
+          path      = "/"
+          path_type = "Prefix"
+
+          backend {
+            service {
+              name = "redis-commander-service"
+
+              port {
+                number = 80
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
 
 //---------------------- Counter App Resources ------------------------------
 
@@ -405,9 +436,9 @@ resource "kubernetes_deployment_v1" "counter_app" {
       spec {
         container {
           name  = "counter-app"
-          image = "flask-counter:v1"
+          image = "ghcr.io/franciscoribeirinhoalmeida/flask-counter:latest"
 
-          image_pull_policy = "Never"
+          image_pull_policy = "Always"
 
           port {
             container_port = 5000
@@ -486,6 +517,37 @@ resource "kubernetes_service_v1" "counter_app" {
   }
 }
 
+resource "kubernetes_ingress_v1" "counter" {
+  metadata {
+    name      = "counter-ingress"
+    namespace = "apps"
+  }
+
+  spec {
+    ingress_class_name = "nginx"
+
+    rule {
+      host = "counter.local"
+
+      http {
+        path {
+          path      = "/"
+          path_type = "Prefix"
+
+          backend {
+            service {
+              name = "counter-app-service"
+
+              port {
+                number = 5000
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
 
 //---------------------- Netdata Resources ------------------------------
 
@@ -548,4 +610,40 @@ resource "kubernetes_service_v1" "netdata" {
     type = "ClusterIP"
   }
 }
+
+resource "kubernetes_ingress_v1" "netdata" {
+  metadata {
+    name      = "netdata-ingress"
+    namespace = "monitoring"
+  }
+
+  spec {
+    ingress_class_name = "nginx"
+
+    rule {
+      host = "netdata.local"
+
+      http {
+        path {
+          path      = "/"
+          path_type = "Prefix"
+
+          backend {
+            service {
+              name = "netdata-service"
+
+              port {
+                number = 19999
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+
+
+
 
